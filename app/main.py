@@ -11,9 +11,12 @@ or POST to /check with {"url": "https://example.com"}.
 import asyncio
 import ipaddress
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .whois_check import check_domain_age
@@ -43,6 +46,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PUBLIC_DIR = PROJECT_ROOT / "public"
+PUBLIC_ASSETS_DIR = PUBLIC_DIR / "assets"
+
+# Serve the browser client from the same FastAPI function on Vercel. This keeps
+# the deployed UI and API same-origin, so no backend URL or CORS exception is
+# exposed to visitors.
+if PUBLIC_ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=PUBLIC_ASSETS_DIR), name="assets")
+
 
 class CheckRequest(BaseModel):
     url: str = Field(..., min_length=4, max_length=2048, examples=["https://example-shop.com"])
@@ -69,7 +82,15 @@ def _extract_domain(url: str) -> str:
 
 @app.get("/")
 async def root():
+    index_file = PUBLIC_DIR / "index.html"
+    if index_file.is_file():
+        return FileResponse(index_file, media_type="text/html")
     return {"status": "ok", "service": "AuthentiCart API", "try": "POST /check with {\"url\": \"...\"}"}
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    return {"status": "ok", "service": "AuthentiCart API"}
 
 
 @app.post("/check")
