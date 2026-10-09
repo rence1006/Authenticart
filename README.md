@@ -45,25 +45,6 @@ The brand check helps prevent legitimate marketplaces from being incorrectly fla
 
 Only domains in the curated `BRANDS` list are treated as official. Add a domain there only after confirming it belongs to the brand.
 
-## Run locally
-
-AuthentiCart uses free public checks and does not require API keys for the included implementation.
-
-```bash
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8002
-```
-
-Then serve the frontend in another terminal:
-
-```bash
-python -m http.server 5173 --directory frontend
-```
-
-Open `http://127.0.0.1:5173`. The local API is available at `http://127.0.0.1:8002`; interactive docs are available at `http://127.0.0.1:8002/docs` when public mode is disabled.
-
 Example request:
 
 ```bash
@@ -71,16 +52,6 @@ curl -X POST http://127.0.0.1:8002/check \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}'
 ```
-
-## Deploy on Vercel
-
-The repository is configured for a free Vercel Hobby deployment. The FastAPI entry point is `api/index.py`; the browser client and logo are served from `public/` by the same deployment.
-
-1. Import [the GitHub repository](https://github.com/rence1006/Authenticart) into Vercel.
-2. Deploy from the repository root.
-3. Set `AUTHENTICART_PUBLIC_MODE=1` in the Vercel project environment to keep Swagger, ReDoc, and the OpenAPI document disabled on the public site.
-
-The current deployment is [authenticart-alpha.vercel.app](https://authenticart-alpha.vercel.app/). The public browser calls `/check` on that same origin, so there is no separate backend URL to configure in the frontend. The endpoint must remain reachable for the browser feature to work; do not place secrets or API keys in client files. Add authentication or rate limiting if the service later needs to be restricted.
 
 ## Security and methodology notes
 
@@ -96,10 +67,3 @@ The current deployment is [authenticart-alpha.vercel.app](https://authenticart-a
 - Domain age and TLS are signals, not proof of legitimacy.
 - Plain HTTP scraping can miss content rendered entirely by JavaScript.
 - The system does not score individual marketplace sellers or compare live prices.
-
-## Possible next steps
-
-- Browser extension that checks the active tab automatically.
-- Result caching to avoid repeating checks for the same domain.
-- A labeled dataset for evaluating and tuning scoring weights.
-- Certificate Transparency lookup as an additional signal.
