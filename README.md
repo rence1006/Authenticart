@@ -1,27 +1,53 @@
-# AuthentiCart — Explainable Store Risk Analyzer
+# AuthentiCart — Explainable Store Trust Analyzer
 
-AuthentiCart is a cybersecurity portfolio project that analyzes public storefront signals and explains a 0–100 risk score. It is a signal-based triage aid, not a verdict that a business is safe or fraudulent.
+[![Live demo](https://img.shields.io/badge/live_demo-Vercel-black?logo=vercel)](https://authenticart-alpha.vercel.app/)
 
-## How it works
+**Live application:** [authenticart-alpha.vercel.app](https://authenticart-alpha.vercel.app/)
 
-Three independent checks run concurrently, and their results feed into a
-weighted trust-score engine:
+AuthentiCart is a cybersecurity portfolio project that helps shoppers triage an unfamiliar online store before purchasing. A user submits a public store URL and receives a 0–100 trust score, a plain-language verdict, and the signals that influenced it. The result is an indicator for investigation, not a guarantee that a business or seller is safe.
 
-| Check | Module | What it looks at |
-|---|---|---|
-| Domain age | `app/whois_check.py` | RDAP registration date — free, no API key |
-| TLS certificate | `app/ssl_check.py` | Certificate validation and issuer |
-| Storefront content | `app/scraper.py` | Contact details, policy links, urgency-language patterns |
+## System overview
 
-`app/scoring.py` combines all three into a final score + human-readable
-bullet-point reasons (`compute_trust_score`).
+The browser client and FastAPI service are deployed together on Vercel. The frontend sends a URL to the same-origin `/check` endpoint. The API runs three independent checks concurrently, then combines their results with brand-domain verification:
 
-`app/trusted_domains.py` adds a separate brand-identity signal. Exact official
-domains are marked as trusted, lookalike domains are capped at 15, and brand
-names on unverified domains are capped at 55. A trusted marketplace domain
-still does not guarantee an individual seller or listing.
+```text
+Store URL
+   │
+   ├── Domain age / RDAP       app/whois_check.py
+   ├── TLS certificate         app/ssl_check.py
+   ├── Storefront signals      app/scraper.py
+   └── Brand-domain identity   app/trusted_domains.py
+             │
+             ▼
+       app/scoring.py
+             │
+             ▼
+  Score + verdict + evidence
+```
 
-## Setup (free, no API keys needed)
+### Signals used
+
+| Signal | What it checks |
+|---|---|
+| Domain age | Registration data from RDAP, when available |
+| TLS certificate | Whether HTTPS is valid and who issued the certificate |
+| Storefront content | Contact details, address, phone number, policies, and pressure-selling language |
+| Trusted brands | Whether the hostname exactly matches a curated official domain or looks like a brand impersonation |
+
+## Trusted-brand protection
+
+The brand check helps prevent legitimate marketplaces from being incorrectly flagged solely because they are large shared platforms such as Shopee or Lazada:
+
+- Official domains such as `shopee.ph` and `lazada.com.ph` receive a trusted brand signal and a high score floor.
+- Lookalikes such as `sh0pee.ph`, `shoppee.ph`, and `shopee.evil.com` are classified as impersonation and capped at a very low score.
+- Brand names on unverified domains such as `shopee.xyz` are capped below the safe range until the domain is confirmed.
+- A trusted marketplace is not a guarantee for every seller or listing. The result reminds shoppers to check seller ratings and pay through the platform's checkout.
+
+Only domains in the curated `BRANDS` list are treated as official. Add a domain there only after confirming it belongs to the brand.
+
+## Run locally
+
+AuthentiCart uses free public checks and does not require API keys for the included implementation.
 
 ```bash
 python -m venv venv
@@ -30,18 +56,15 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8002
 ```
 
-The API is now running at `http://127.0.0.1:8002`.
-Visit `http://127.0.0.1:8002/docs` for the interactive Swagger UI. The frontend in `frontend/index.html` points to port 8002; change `API_BASE` near the bottom of that file if your API uses another address.
-
-For the frontend, serve the `frontend` directory with any static server, then open its URL. For example:
+Then serve the frontend in another terminal:
 
 ```bash
 python -m http.server 5173 --directory frontend
 ```
 
-Set `AUTHENTICART_CORS_ORIGINS` to a comma-separated list of allowed frontend origins before deploying, for example `https://your-site.example`. The local defaults allow `localhost:5173` and `127.0.0.1:5173`.
+Open `http://127.0.0.1:5173`. The local API is available at `http://127.0.0.1:8002`; interactive docs are available at `http://127.0.0.1:8002/docs` when public mode is disabled.
 
-Example API request:
+Example request:
 
 ```bash
 curl -X POST http://127.0.0.1:8002/check \
@@ -49,74 +72,34 @@ curl -X POST http://127.0.0.1:8002/check \
   -d '{"url": "https://example.com"}'
 ```
 
-## Example response
+## Deploy on Vercel
 
-```json
-{
-  "url": "https://example.com",
-  "domain": "example.com",
-  "trust_score": 25,
-  "label": "High Risk",
-  "reasons": [
-    "Safe: Domain has been registered for 31+ year(s).",
-    "Safe: Valid SSL certificate issued by SSL Corporation.",
-    "Note: Certificate issuer type is not a legitimacy guarantee.",
-    "Caution: No physical address found — legitimate businesses usually list one."
-  ],
-  "details": { "...": "full raw data from each check" }
-}
-```
+The repository is configured for a free Vercel Hobby deployment. The FastAPI entry point is `api/index.py`; the browser client and logo are served from `public/` by the same deployment.
 
-## Deploying for free
+1. Import [the GitHub repository](https://github.com/rence1006/Authenticart) into Vercel.
+2. Deploy from the repository root.
+3. Set `AUTHENTICART_PUBLIC_MODE=1` in the Vercel project environment to keep Swagger, ReDoc, and the OpenAPI document disabled on the public site.
 
-- **Vercel**: The repository includes `api/index.py` and `vercel.json` so the
-  frontend can call the FastAPI app through the same origin at `/api/check`.
-  Deploy the repository root, not only the `frontend` folder. Vercel's Hobby
-  plan is suitable for a personal portfolio within its usage limits.
-- The browser-visible `/api/check` route is not a secret. Same-origin routing
-  hides the separate backend URL, but a public browser must still be able to
-  call the endpoint. Do not put API keys in `frontend/index.html`; add
-  authentication, rate limiting, or Vercel access protection if the endpoint
-  must be restricted.
-- Set `AUTHENTICART_PUBLIC_MODE=1` in Vercel if you want to disable the
-  interactive `/docs`, `/redoc`, and `/openapi.json` routes. This reduces API
-  discoverability, but it is not a replacement for authentication or rate
-  limiting.
-- **Separate backend**: You can instead deploy the FastAPI app to a Python
-  host and set `API_BASE` to that HTTPS URL, then add the Vercel origin to
-  `AUTHENTICART_CORS_ORIGINS`.
+The current deployment is [authenticart-alpha.vercel.app](https://authenticart-alpha.vercel.app/). The public browser calls `/check` on that same origin, so there is no separate backend URL to configure in the frontend. The endpoint must remain reachable for the browser feature to work; do not place secrets or API keys in client files. Add authentication or rate limiting if the service later needs to be restricted.
 
 ## Security and methodology notes
 
-- A valid TLS certificate protects a connection; it does not establish that a store is honest. Certificate issuer type does not earn a trust bonus.
-- The API accepts public HTTP(S) URLs only, rejects embedded credentials and literal private/reserved IP addresses, and limits URL length. Public deployment still needs DNS/IP resolution checks and redirect validation at the fetch layer to prevent SSRF via hostnames or redirects.
-- CORS is restricted to local frontend origins by default. Set `AUTHENTICART_CORS_ORIGINS` to the deployed frontend origin(s) for production.
-- Avoid sending sensitive URLs or private customer data to a public deployment. Requests trigger outbound RDAP, TLS, and HTTP checks against the submitted domain.
+- A valid TLS certificate protects a connection; it does not prove that a store is honest.
+- The API accepts public HTTP(S) URLs, rejects embedded credentials and literal private or reserved IP addresses, and limits URL length.
+- Public deployments should add DNS and redirect validation at the fetch layer before handling untrusted traffic at scale.
+- CORS is restricted by configuration. Set `AUTHENTICART_CORS_ORIGINS` when using a separate frontend origin.
+- Do not submit sensitive URLs or private customer data to a public instance.
 
 ## Known limitations
 
-- **RDAP/WHOIS privacy redaction**: some registries redact registrant info
-  post-GDPR. Registration *date* is usually still available even when
-  registrant *name* isn't — that's what we use.
-- **Domain age is a signal, not proof**: legitimate businesses do launch new
-  domains. It's weighted, not a hard pass/fail.
-- **No live price-comparison engine**: detecting "suspicious price drops"
-  needs either historical pricing data or a reference catalog, which is out
-  of scope for this MVP. The urgency-language detector (`URGENCY_PHRASES`
-  in `scraper.py`) is a lightweight proxy for the same scam pattern.
-- **JS-heavy storefronts**: the scraper uses plain HTTP + BeautifulSoup, so
-  sites that render content entirely via JavaScript may return incomplete
-  signals. Swapping in Playwright would fix this at the cost of being
-  slower and heavier — a reasonable "next steps" item.
+- RDAP can be unavailable or privacy-redacted, so domain age may be unknown.
+- Domain age and TLS are signals, not proof of legitimacy.
+- Plain HTTP scraping can miss content rendered entirely by JavaScript.
+- The system does not score individual marketplace sellers or compare live prices.
 
-## Next steps / stretch goals
+## Possible next steps
 
-- Browser extension (`manifest.json` + content script) that reads the
-  current tab's URL and calls `/check` automatically.
-- Cache results (e.g. Redis or even a SQLite table) so repeated checks on
-  the same domain within 24h don't re-run all three checks.
-- Curate a small labeled dataset of known scam vs. legit stores to
-  backtest and tune the scoring weights in `app/scoring.py`.
-- Certificate Transparency log lookup (crt.sh, also free) as a fourth
-  signal — shows the *first* time a cert was ever issued for a domain,
-  which is harder to fake than the current cert's dates alone.
+- Browser extension that checks the active tab automatically.
+- Result caching to avoid repeating checks for the same domain.
+- A labeled dataset for evaluating and tuning scoring weights.
+- Certificate Transparency lookup as an additional signal.
