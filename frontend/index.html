@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="AuthentiCart checks online stores for explainable trust signals.">
+<title>AuthentiCart — Store Trust Signals</title>
+<style>
+  :root { color-scheme:dark; --bg:#080d1c; --panel:rgba(18,27,52,.86); --line:#2c3a60; --text:#f2f5ff; --muted:#9ba9c9; --accent:#8b7cff; --accent-strong:#6c5ce7; --safe:#51d69b; --caution:#f2c96d; --risk:#ff7f91; }
+  * { box-sizing:border-box; }
+  body { min-height:100vh; margin:0; padding:24px 20px 42px; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; background:radial-gradient(circle at 12% 0%,#182655 0,transparent 38%),var(--bg); color:var(--text); }
+  main { width:min(820px,100%); margin:0 auto; }
+  .page-header { display:flex; align-items:center; gap:12px; margin-bottom:42px; }
+  .brand-mark { width:30px; height:30px; object-fit:cover; object-position:center 52%; border-radius:9px; border:1px solid rgba(90,227,230,.55); box-shadow:0 0 20px rgba(25,208,211,.2); }
+  .brand-name { font-size:1rem; font-weight:800; letter-spacing:-.02em; }
+  h1 { font-size:clamp(2.6rem,6vw,3.5rem); line-height:1.04; letter-spacing:-.05em; margin:0 0 14px; }
+  .intro { max-width:650px; color:var(--muted); font-size:1.05rem; line-height:1.6; margin:0; }
+  .tool-card,.result-card,details,.explain-card { border:1px solid var(--line); background:var(--panel); box-shadow:0 24px 70px rgba(0,0,0,.2); }
+  .tool-card { border-radius:20px; padding:24px; margin-top:28px; }
+  label { display:block; font-size:.83rem; font-weight:700; margin-bottom:9px; color:#c6d0ea; }
+  .input-row { display:flex; gap:10px; }
+  input[type=url] { min-width:0; flex:1; padding:14px 15px; border-radius:11px; border:1px solid #3a4a76; background:#0c142a; color:var(--text); font:inherit; font-size:1rem; outline:none; }
+  input[type=url]:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(139,124,255,.2); }
+  button { border:0; border-radius:11px; padding:0 21px; background:var(--accent-strong); color:#fff; font:inherit; font-weight:800; cursor:pointer; transition:transform .15s ease,background .15s ease; }
+  button:hover:not(:disabled) { background:var(--accent); transform:translateY(-1px); }
+  button:disabled { cursor:wait; opacity:.6; }
+  .examples { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:14px; color:var(--muted); font-size:.8rem; }
+  .example-chip { min-height:31px; padding:5px 12px; border:1px solid #2b3a61; border-radius:999px; background:#101a34; color:#e5eaff; font-size:.78rem; font-weight:600; }
+  .example-chip:hover { border-color:var(--accent); }
+  .example-chip.danger { border-color:rgba(255,127,145,.65); }
+  .hint { margin:13px 0 0; color:var(--muted); font-size:.82rem; }
+  .how-it-works { margin-top:38px; }
+  .how-it-works h2 { margin:0 0 14px; font-size:1rem; }
+  .explain-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .explain-card { min-height:132px; border-radius:18px; padding:17px; box-shadow:none; }
+  .explain-card h3 { margin:0 0 8px; font-size:.9rem; }
+  .explain-card p { margin:0; color:var(--muted); font-size:.86rem; line-height:1.55; }
+  .score-legend { display:flex; flex-wrap:wrap; gap:16px; margin:17px 0 0; color:#c5d0ec; font-size:.8rem; }
+  .legend-item { display:flex; align-items:center; gap:6px; }
+  .legend-dot { width:9px; height:9px; border-radius:50%; }
+  #result { margin-top:22px; }
+  .status { color:var(--muted); padding:20px 2px; }
+  .error { color:var(--risk); border:1px solid rgba(255,127,145,.35); background:rgba(255,127,145,.08); border-radius:12px; padding:15px; }
+  .result-card { border-radius:20px; overflow:hidden; }
+  .result-top { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:24px; }
+  .score-number { margin:0; font-size:clamp(3.2rem,10vw,5.2rem); line-height:.9; letter-spacing:-.06em; font-weight:900; }
+  .score-label { margin:12px 0 0; font-weight:800; font-size:1.2rem; }
+  .domain { color:var(--muted); font-size:.88rem; margin:7px 0 0; word-break:break-all; }
+  .gauge { width:132px; height:132px; flex:0 0 132px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--score-color) calc(var(--score) * 1%),#263354 0); position:relative; }
+  .gauge::after { content:""; width:100px; height:100px; border-radius:50%; background:#111b35; position:absolute; }
+  .gauge span { position:relative; z-index:1; color:#dbe2fb; font-size:.8rem; font-weight:800; text-align:center; }
+  .reasons { border-top:1px solid var(--line); padding:20px 24px 22px; }
+  .reasons-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .reasons h2 { margin:0; font-size:1rem; }
+  .plain-toggle { min-height:34px; padding:7px 12px; border:1px solid #3a4a76; background:#101a34; color:#dfe4ff; font-size:.76rem; }
+  .plain-toggle:hover:not(:disabled) { background:#1b2850; transform:none; }
+  .plain-summary { display:none; margin:0 0 16px; padding:13px 15px; border-left:3px solid var(--accent); border-radius:0 10px 10px 0; background:rgba(139,124,255,.1); color:#e4e8ff; line-height:1.55; font-size:.9rem; }
+  .plain-summary.visible { display:block; }
+  .reasons ul { list-style:none; padding:0; margin:0; display:grid; gap:10px; }
+  .reasons li { display:flex; gap:10px; color:#d7def2; line-height:1.45; }
+  .reasons li::before { content:""; width:8px; height:8px; flex:0 0 8px; border-radius:50%; background:var(--dot,var(--caution)); margin-top:.52em; }
+  .reasons li.safe::before { --dot:var(--safe); } .reasons li.caution::before { --dot:var(--risk); } .reasons li.note::before { --dot:var(--caution); }
+  details { border-radius:14px; margin-top:14px; box-shadow:none; }
+  summary { cursor:pointer; padding:15px 17px; color:#d8def3; font-weight:750; }
+  .signals { border-top:1px solid var(--line); padding:15px 17px 17px; display:grid; gap:10px; }
+  .signal { display:flex; justify-content:space-between; gap:20px; color:var(--muted); font-size:.88rem; }
+  .signal strong { color:var(--text); text-align:right; }
+  .disclaimer { color:var(--muted); font-size:.8rem; line-height:1.55; margin:18px 2px 0; }
+  @media (max-width:620px) { body{padding:20px 15px 34px;} .page-header{margin-bottom:34px;} h1{font-size:clamp(2.35rem,10vw,3.25rem);} .tool-card{padding:19px;} .input-row{flex-direction:column;} button{min-height:48px;} .explain-grid{grid-template-columns:1fr;} .explain-card{min-height:0;} .result-top{padding:21px;} .gauge{width:100px;height:100px;flex-basis:100px;} .gauge::after{width:76px;height:76px;} .reasons{padding:18px 21px 20px;} .reasons-heading{align-items:flex-start;flex-direction:column;} }
+</style>
+</head>
+<body>
+<main>
+  <header class="page-header">
+    <img class="brand-mark" src="assets/authenticart-logo.jpg" alt="AuthentiCart cart and shield logo">
+    <span class="brand-name">AuthentiCart</span>
+  </header>
+  <h1>Can you trust this store?</h1>
+  <p class="intro">AuthentiCart combines domain age, TLS, and storefront signals into an explainable safety score. It is a risk indicator, not a guarantee.</p>
+  <section class="tool-card" aria-labelledby="check-heading">
+    <h2 id="check-heading" style="font-size:1rem;margin:0 0 16px">Analyze a storefront</h2>
+    <form id="checkForm">
+      <label for="urlInput">Store URL</label>
+      <div class="input-row"><input type="url" id="urlInput" placeholder="https://example-shop.com" autocomplete="url" required><button id="checkBtn" type="submit">Analyze store</button></div>
+    </form>
+    <div class="examples" aria-label="Try an example domain">
+      <span>Try:</span>
+      <button class="example-chip" type="button" data-url="https://shopee.ph">shopee.ph</button>
+      <button class="example-chip" type="button" data-url="https://lazada.com.ph">lazada.com.ph</button>
+      <button class="example-chip danger" type="button" data-url="https://shopee-ph-sale.com">shopee-ph-sale.com</button>
+      <button class="example-chip danger" type="button" data-url="https://hot-gadgets-24.shop">hot-gadgets-24.shop</button>
+    </div>
+    <p class="hint">Checks run on the server and can take up to 20 seconds for a slow site.</p>
+  </section>
+  <div id="result" aria-live="polite"></div>
+  <section class="how-it-works" aria-labelledby="how-heading">
+    <h2 id="how-heading">How the score works</h2>
+    <div class="explain-grid">
+      <article class="explain-card"><h3>Domain age</h3><p>Very new registrations can raise risk. Missing registration data is treated as an unknown signal.</p></article>
+      <article class="explain-card"><h3>SSL certificate</h3><p>We check whether a valid certificate protects the connection. HTTPS alone does not prove a store is legitimate.</p></article>
+      <article class="explain-card"><h3>Storefront signals</h3><p>We look for contact details, policy links, and pressure-selling language in the page we can inspect.</p></article>
+    </div>
+    <div class="score-legend" aria-label="Score ranges">
+      <span class="legend-item"><i class="legend-dot" style="background:var(--safe)"></i>75–100 Likely safe</span>
+      <span class="legend-item"><i class="legend-dot" style="background:var(--caution)"></i>45–74 Use caution</span>
+      <span class="legend-item"><i class="legend-dot" style="background:var(--risk)"></i>0–44 High risk</span>
+    </div>
+  </section>
+  <p class="disclaimer">Signals can be incomplete for JavaScript-heavy stores, privacy-redacted domains, and new legitimate businesses. Review the evidence before making a purchase decision.</p>
+</main>
+<script>
+  const API_BASE = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+    ? "http://127.0.0.1:8002"
+    : "/api";
+  const form=document.getElementById("checkForm"), input=document.getElementById("urlInput"), resultDiv=document.getElementById("result"), btn=document.getElementById("checkBtn");
+  document.querySelectorAll(".example-chip").forEach(chip=>chip.addEventListener("click",()=>{input.value=chip.dataset.url;input.focus();}));
+  function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[char]));}
+  function normalizeUrl(value){const trimmed=value.trim();return /^https?:\/\//i.test(trimmed)?trimmed:`https://${trimmed}`;}
+  function reasonClass(reason){const lower=reason.toLowerCase();if(lower.startsWith("safe:"))return"safe";if(lower.startsWith("caution:"))return"caution";return"note";}
+  function signal(label,value){return `<div class="signal"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;}
+  function buildSimpleSummary(data){
+    const reasons=(data.reasons||[]).map(reason=>reason.toLowerCase());
+    const score=Math.max(0,Math.min(100,Number(data.trust_score)||0));
+    const brand=data.details?.brand_check||{};
+    const parts=[];
+    if(brand.status==="trusted") parts.push(`The address matches the verified ${brand.brand||"brand"} domain.`);
+    if(brand.status==="lookalike") parts.push(`The address resembles ${brand.brand||"a known brand"}, but it is not on the official domain list.`);
+    if(brand.status==="unverified_brand") parts.push(`The address uses the ${brand.brand||"brand"} name, but we could not verify it as an official domain.`);
+    if(reasons.some(reason=>reason.includes("valid ssl"))) parts.push("The connection is encrypted with a valid certificate.");
+    if(reasons.some(reason=>reason.includes("registered for"))) parts.push("The domain has been registered for a long time.");
+    if(reasons.some(reason=>reason.includes("relatively new")||reason.includes("registered only"))) parts.push("The domain is fairly new, which can increase risk.");
+    if(reasons.some(reason=>reason.includes("could not verify domain"))) parts.push("We could not verify when the domain was registered.");
+    const missing=[];
+    if(reasons.some(reason=>reason.includes("no contact"))) missing.push("contact details");
+    if(reasons.some(reason=>reason.includes("no physical address"))) missing.push("a business address");
+    if(reasons.some(reason=>reason.includes("no phone"))) missing.push("a phone number");
+    if(reasons.some(reason=>reason.includes("missing pages"))) missing.push("store policies");
+    if(missing.length) parts.push(`We could not find ${missing.join(", ")}.`);
+    if(reasons.some(reason=>reason.includes("urgency")||reason.includes("pressure"))) parts.push("The page uses pressure language that deserves caution.");
+    if(!parts.length) parts.push("There was not enough information to explain this result clearly.");
+    const ending=score>=75?"Overall, the available signals look mostly positive, but still review the seller and payment details.":score>=45?"Overall, some warning signs are present, so verify the store before paying.":"Overall, several warning signs were found. Avoid entering payment details until you verify the business another way.";
+    return `${parts.join(" ")} ${ending}`;
+  }
+  function renderResult(data){
+    const score=Math.max(0,Math.min(100,Number(data.trust_score)||0));
+    const color=data.label==="Likely Safe"?"var(--safe)":data.label==="Use Caution"?"var(--caution)":"var(--risk)";
+    const reasonsHtml=(data.reasons||[]).map(reason=>`<li class="${reasonClass(reason)}">${escapeHtml(reason)}</li>`).join("");
+    const age=data.details?.domain_age||{}, ssl=data.details?.ssl||{}, content=data.details?.content_signals||{}, brand=data.details?.brand_check||{};
+    const brandLabel=brand.status==="trusted"?`Verified ${brand.brand||"official"} domain`:brand.status==="lookalike"?`Possible ${brand.brand||"brand"} impersonation`:brand.status==="unverified_brand"?`${brand.brand||"Brand"} domain not on the official list`:"No known brand match";
+    const policies=content.found_policies?.length?content.found_policies.join(", "):"None detected";
+    const simpleSummary=buildSimpleSummary(data);
+    resultDiv.innerHTML=`<article class="result-card"><div class="result-top"><div><p class="score-number" style="color:${color}">${score}<span style="font-size:.38em;letter-spacing:-.02em;color:var(--muted)">/100</span></p><p class="score-label" style="color:${color}">${escapeHtml(data.label||"Unknown")}</p><p class="domain">${escapeHtml(data.domain||"")}</p></div><div class="gauge" style="--score:${score};--score-color:${color}" aria-label="Safety score ${score} out of 100"><span>SAFETY<br>SCORE</span></div></div><div class="reasons"><div class="reasons-heading"><h2>What influenced this score</h2><button class="plain-toggle" type="button" aria-expanded="false">Explain this simply</button></div><p class="plain-summary">${escapeHtml(simpleSummary)}</p><ul>${reasonsHtml||"<li class=note>No explanatory signals were returned.</li>"}</ul></div></article><details><summary>View technical signals</summary><div class="signals">${signal("Brand identity",brandLabel)}${signal("Domain age",age.age_days==null?"Unavailable":`${age.age_days} days`)}${signal("TLS certificate",ssl.valid?`Valid · ${ssl.issuer||"issuer unavailable"}`:"Invalid or unavailable")}${signal("Storefront reachable",content.reachable?"Yes":"No")}${signal("Policy pages",policies)}${signal("Urgency phrases",content.urgency_phrase_count??"Unavailable")}</div></details>`;
+    const explainButton=resultDiv.querySelector(".plain-toggle");
+    const summary=resultDiv.querySelector(".plain-summary");
+    explainButton.addEventListener("click",()=>{const isVisible=summary.classList.toggle("visible");explainButton.setAttribute("aria-expanded",String(isVisible));explainButton.textContent=isVisible?"Hide simple explanation":"Explain this simply";});
+  }
+  form.addEventListener("submit",async event=>{event.preventDefault();if(!input.value.trim())return;const url=normalizeUrl(input.value);btn.disabled=true;btn.textContent="Analyzing…";resultDiv.innerHTML='<p class="status">Running domain, TLS, and storefront checks…</p>';const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),25000);try{const resp=await fetch(`${API_BASE}/check`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url}),signal:controller.signal});const data=await resp.json().catch(()=>({}));if(!resp.ok)throw new Error(data.detail||"The server rejected this URL.");renderResult(data);}catch(error){const message=error.name==="AbortError"?"The check timed out. Try a faster storefront or check the API logs.":error.message==="Failed to fetch"?`Could not reach the API at ${API_BASE}.`:error.message;resultDiv.innerHTML=`<p class="error" role="alert">${escapeHtml(message)}</p>`;}finally{clearTimeout(timeout);btn.disabled=false;btn.textContent="Analyze store";}});
+</script>
+</body>
+</html>
