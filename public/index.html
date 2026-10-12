@@ -4,9 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="AuthentiCart checks online stores for explainable trust signals.">
+<meta property="og:title" content="AuthentiCart — Store Trust Signals">
+<meta property="og:description" content="Check an online store for explainable trust and risk signals.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/authenticart-logo.jpg">
+<link rel="icon" href="assets/authenticart-logo.jpg" type="image/jpeg">
 <title>AuthentiCart — Store Trust Signals</title>
 <style>
-  :root { color-scheme:dark; --bg:#080d1c; --panel:rgba(18,27,52,.86); --line:#2c3a60; --text:#f2f5ff; --muted:#9ba9c9; --accent:#8b7cff; --accent-strong:#6c5ce7; --safe:#51d69b; --caution:#f2c96d; --risk:#ff7f91; }
+  :root { color-scheme:dark; --bg:#080d1c; --panel:rgba(18,27,52,.86); --line:#2c3a60; --text:#f2f5ff; --muted:#9ba9c9; --accent:#8b7cff; --accent-strong:#6c5ce7; --safe:#51d69b; --caution:#f2c96d; --risk:#ff7f91; --unknown:#9ba9c9; }
   * { box-sizing:border-box; }
   body { min-height:100vh; margin:0; padding:24px 20px 42px; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; background:radial-gradient(circle at 12% 0%,#182655 0,transparent 38%),var(--bg); color:var(--text); }
   main { width:min(820px,100%); margin:0 auto; }
@@ -54,12 +59,20 @@
   .reasons h2 { margin:0; font-size:1rem; }
   .plain-toggle { min-height:34px; padding:7px 12px; border:1px solid #3a4a76; background:#101a34; color:#dfe4ff; font-size:.76rem; }
   .plain-toggle:hover:not(:disabled) { background:#1b2850; transform:none; }
+  .result-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+  .result-actions button { min-height:34px; padding:7px 12px; border:1px solid #3a4a76; border-radius:9px; background:#101a34; color:#dfe4ff; font:inherit; font-size:.76rem; font-weight:750; text-decoration:none; cursor:pointer; }
+  .result-actions button:hover { background:#1b2850; }
   .plain-summary { display:none; margin:0 0 16px; padding:13px 15px; border-left:3px solid var(--accent); border-radius:0 10px 10px 0; background:rgba(139,124,255,.1); color:#e4e8ff; line-height:1.55; font-size:.9rem; }
   .plain-summary.visible { display:block; }
   .reasons ul { list-style:none; padding:0; margin:0; display:grid; gap:10px; }
   .reasons li { display:flex; gap:10px; color:#d7def2; line-height:1.45; }
   .reasons li::before { content:""; width:8px; height:8px; flex:0 0 8px; border-radius:50%; background:var(--dot,var(--caution)); margin-top:.52em; }
   .reasons li.safe::before { --dot:var(--safe); } .reasons li.caution::before { --dot:var(--risk); } .reasons li.note::before { --dot:var(--caution); }
+  .reasons li.note { color:#b7c0d5; } .reasons li.note::before { --dot:var(--unknown); }
+  .points-breakdown { display:grid; gap:8px; margin:16px 0 0; padding-top:15px; border-top:1px solid var(--line); }
+  .points-breakdown h3 { margin:0 0 2px; font-size:.86rem; color:#d8def3; }
+  .points-row { display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:.84rem; }
+  .points-row strong { color:var(--text); font-variant-numeric:tabular-nums; }
   details { border-radius:14px; margin-top:14px; box-shadow:none; }
   summary { cursor:pointer; padding:15px 17px; color:#d8def3; font-weight:750; }
   .signals { border-top:1px solid var(--line); padding:15px 17px 17px; display:grid; gap:10px; }
@@ -129,7 +142,7 @@
     if(reasons.some(reason=>reason.includes("valid ssl"))) parts.push("The connection is encrypted with a valid certificate.");
     if(reasons.some(reason=>reason.includes("registered for"))) parts.push("The domain has been registered for a long time.");
     if(reasons.some(reason=>reason.includes("relatively new")||reason.includes("registered only"))) parts.push("The domain is fairly new, which can increase risk.");
-    if(reasons.some(reason=>reason.includes("could not verify domain"))) parts.push("We could not verify when the domain was registered.");
+    if(reasons.some(reason=>reason.includes("domain age could not be verified"))) parts.push("We could not verify when the domain was registered.");
     const missing=[];
     if(reasons.some(reason=>reason.includes("no contact"))) missing.push("contact details");
     if(reasons.some(reason=>reason.includes("no physical address"))) missing.push("a business address");
@@ -145,14 +158,17 @@
     const score=Math.max(0,Math.min(100,Number(data.trust_score)||0));
     const color=data.label==="Likely Safe"?"var(--safe)":data.label==="Use Caution"?"var(--caution)":"var(--risk)";
     const reasonsHtml=(data.reasons||[]).map(reason=>`<li class="${reasonClass(reason)}">${escapeHtml(reason)}</li>`).join("");
-    const age=data.details?.domain_age||{}, ssl=data.details?.ssl||{}, content=data.details?.content_signals||{}, brand=data.details?.brand_check||{};
+    const age=data.details?.domain_age||{}, ssl=data.details?.ssl||{}, ct=data.details?.certificate_transparency||{}, content=data.details?.content_signals||{}, brand=data.details?.brand_check||{};
     const brandLabel=brand.status==="trusted"?`Verified ${brand.brand||"official"} domain`:brand.status==="lookalike"?`Possible ${brand.brand||"brand"} impersonation`:brand.status==="unverified_brand"?`${brand.brand||"Brand"} domain not on the official list`:"No known brand match";
     const policies=content.found_policies?.length?content.found_policies.join(", "):"None detected";
+    const points=[{signal:"Neutral starting score",points:Number(data.base_score)||0},...(data.signal_points||[])].map(item=>`<div class="points-row"><span>${escapeHtml(item.signal)}</span><strong>${item.points>0?"+":""}${escapeHtml(item.points)} points</strong></div>`).join("");
     const simpleSummary=buildSimpleSummary(data);
-    resultDiv.innerHTML=`<article class="result-card"><div class="result-top"><div><p class="score-number" style="color:${color}">${score}<span style="font-size:.38em;letter-spacing:-.02em;color:var(--muted)">/100</span></p><p class="score-label" style="color:${color}">${escapeHtml(data.label||"Unknown")}</p><p class="domain">${escapeHtml(data.domain||"")}</p></div><div class="gauge" style="--score:${score};--score-color:${color}" aria-label="Safety score ${score} out of 100"><span>SAFETY<br>SCORE</span></div></div><div class="reasons"><div class="reasons-heading"><h2>What influenced this score</h2><button class="plain-toggle" type="button" aria-expanded="false">Explain this simply</button></div><p class="plain-summary">${escapeHtml(simpleSummary)}</p><ul>${reasonsHtml||"<li class=note>No explanatory signals were returned.</li>"}</ul></div></article><details><summary>View technical signals</summary><div class="signals">${signal("Brand identity",brandLabel)}${signal("Domain age",age.age_days==null?"Unavailable":`${age.age_days} days`)}${signal("TLS certificate",ssl.valid?`Valid · ${ssl.issuer||"issuer unavailable"}`:"Invalid or unavailable")}${signal("Storefront reachable",content.reachable?"Yes":"No")}${signal("Policy pages",policies)}${signal("Urgency phrases",content.urgency_phrase_count??"Unavailable")}</div></details>`;
+    resultDiv.innerHTML=`<article class="result-card"><div class="result-top"><div><p class="score-number" style="color:${color}">${score}<span style="font-size:.38em;letter-spacing:-.02em;color:var(--muted)">/100</span></p><p class="score-label" style="color:${color}">${escapeHtml(data.label||"Unknown")}</p><p class="domain">${escapeHtml(data.domain||"")}</p></div><div class="gauge" style="--score:${score};--score-color:${color}" aria-label="Safety score ${score} out of 100"><span>SAFETY<br>SCORE</span></div></div><div class="reasons"><div class="reasons-heading"><h2>What influenced this score</h2><button class="plain-toggle" type="button" aria-expanded="false">Explain this simply</button></div><p class="plain-summary">${escapeHtml(simpleSummary)}</p><ul>${reasonsHtml||"<li class=note>No explanatory signals were returned.</li>"}</ul><div class="points-breakdown"><h3>Points by signal</h3>${points||"<div class=points-row><span>None</span><strong>0 points</strong></div>"}</div><div class="result-actions"><button type="button" class="copy-result">Copy result</button></div></div></article><details><summary>View technical signals</summary><div class="signals">${signal("Brand identity",brandLabel)}${signal("Domain age",age.age_days==null?"Unavailable":`${age.age_days} days`)}${signal("TLS certificate",ssl.valid?`Valid · ${ssl.issuer||"issuer unavailable"}`:"Unavailable")}${signal("Certificate Transparency",ct.certificate_age_days==null?"Unavailable":`${ct.certificate_age_days} days old`)}${signal("Storefront reachable",content.reachable?"Yes":"No")}${signal("Storefront inspection",content.inspectable?"Completed":(content.error||"Skipped"))}${signal("Redirects",content.inspectable?(content.redirect_count??"0"):"Unavailable")}${signal("Policy pages",policies)}${signal("Urgency phrases",content.inspectable?(content.urgency_phrase_count??"0"):"Unavailable")}${signal("Login/payment forms",content.inspectable?`${content.has_login_form?"Login ":""}${content.has_payment_form?"Payment":""}`.trim()||"None":"Unavailable")}${signal("External form actions",content.inspectable?(content.external_form_actions?.length?content.external_form_actions.join(", "):"None"):"Unavailable")}${signal("Social links",content.inspectable?(content.social_links_found?.length?content.social_links_found.join(", "):"None"):"Unavailable")}</div></details>`;
     const explainButton=resultDiv.querySelector(".plain-toggle");
     const summary=resultDiv.querySelector(".plain-summary");
     explainButton.addEventListener("click",()=>{const isVisible=summary.classList.toggle("visible");explainButton.setAttribute("aria-expanded",String(isVisible));explainButton.textContent=isVisible?"Hide simple explanation":"Explain this simply";});
+    const copyButton=resultDiv.querySelector(".copy-result");
+    copyButton.addEventListener("click",async()=>{const text=`AuthentiCart result for ${data.domain}: ${score}/100 — ${data.label}.\n${simpleSummary}`;try{await navigator.clipboard.writeText(text);copyButton.textContent="Copied";}catch{copyButton.textContent="Copy failed";}setTimeout(()=>{copyButton.textContent="Copy result";},1800);});
   }
   form.addEventListener("submit",async event=>{event.preventDefault();if(!input.value.trim())return;const url=normalizeUrl(input.value);btn.disabled=true;btn.textContent="Analyzing…";resultDiv.innerHTML='<p class="status">Running domain, TLS, and storefront checks…</p>';const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),25000);try{const resp=await fetch(`${API_BASE}/check`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url}),signal:controller.signal});const data=await resp.json().catch(()=>({}));if(!resp.ok)throw new Error(data.detail||"The server rejected this URL.");renderResult(data);}catch(error){const message=error.name==="AbortError"?"The check timed out. Try a faster storefront or check the API logs.":error.message==="Failed to fetch"?`Could not reach the API at ${API_BASE}.`:error.message;resultDiv.innerHTML=`<p class="error" role="alert">${escapeHtml(message)}</p>`;}finally{clearTimeout(timeout);btn.disabled=false;btn.textContent="Analyze store";}});
 </script>

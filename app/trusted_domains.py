@@ -4,6 +4,7 @@ Brand identity is kept separate from storefront risk. An official marketplace
 domain can still contain risky sellers, so callers should display that caveat.
 """
 from typing import Any, Dict, List, Optional
+import tldextract
 
 
 BRANDS: Dict[str, Dict[str, Any]] = {
@@ -44,7 +45,12 @@ ALLOWED_SUBDOMAINS = {
 }
 
 LEET = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t"})
-SECOND_LEVELS = {"com", "co", "net", "org", "gov", "edu", "ac"}
+HOMOGLYPHS = str.maketrans({
+    "\u0430": "a", "\u0435": "e", "\u043e": "o", "\u0440": "p",
+    "\u0441": "c", "\u0445": "x", "\u0456": "i", "\u03b1": "a",
+    "\u03bf": "o", "\u03c1": "p",
+})
+_EXTRACT = tldextract.TLDExtract(suffix_list_urls=())
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -65,6 +71,10 @@ def _levenshtein(a: str, b: str) -> int:
 
 def _clean_host(host: str) -> str:
     host = host.strip().lower().rstrip(".")
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return ""
     if host.startswith("www."):
         host = host[4:]
     return host
@@ -79,16 +89,18 @@ def _official_match(host: str, domains: List[str]) -> Optional[str]:
     return None
 
 
-def _registrable_index(labels: List[str]) -> int:
-    # Covers common structures such as shopee.com.ph and shopee.co.uk without
-    # adding a heavyweight public-suffix dependency to the MVP.
-    if len(labels) >= 3 and labels[-2] in SECOND_LEVELS and len(labels[-1]) == 2:
-        return len(labels) - 3
-    return len(labels) - 2
+def _registered_domain(host: str) -> str:
+    extracted = _EXTRACT(host)
+    return extracted.registered_domain.lower()
 
 
 def _imitates(label: str, brand: str) -> bool:
-    variants = {label, label.translate(LEET)}
+    variants = {
+        label,
+        label.translate(LEET),
+        label.translate(HOMOGLYPHS),
+        label.translate(HOMOGLYPHS).translate(LEET),
+    }
     for variant in variants:
         tokens = variant.split("-")
         if brand in tokens and variant != brand:
@@ -106,11 +118,22 @@ def _imitates(label: str, brand: str) -> bool:
 
 def classify_domain(host: str) -> Dict[str, Any]:
     """Classify a hostname as trusted, unverified, lookalike, or unknown."""
+    unicode_host = host.strip().lower().rstrip(".")
+    if unicode_host.startswith("www."):
+        unicode_host = unicode_host[4:]
     host = _clean_host(host)
     labels = host.split(".") if host else []
+    unicode_labels = unicode_host.split(".") if unicode_host else []
 
     for key, info in BRANDS.items():
         matched_domain = _official_match(host, info["domains"])
+        if not matched_domain:
+            host_registered = _registered_domain(host)
+            matched_domain = next(
+                (official for official in info["domains"]
+                 if _registered_domain(official) == host_registered),
+                None,
+            )
         if not matched_domain:
             matched_domain = next(
                 (allowed for allowed in ALLOWED_SUBDOMAINS if host == allowed),
@@ -136,11 +159,11 @@ def classify_domain(host: str) -> Dict[str, Any]:
     if len(labels) < 2:
         return {"status": "unknown", "brand": None, "marketplace": False, "matched_domain": None}
 
-    registrable_idx = _registrable_index(labels)
+    registrable_domain = _registered_domain(host)
     for key, info in BRANDS.items():
-        for index, label in enumerate(labels[:-1]):
+        for index, label in enumerate(labels[:-1] + unicode_labels[:-1]):
             if label == key:
-                status = "unverified_brand" if index == registrable_idx else "lookalike"
+                status = "unverified_brand" if registrable_domain == host else "lookalike"
                 return {
                     "status": status,
                     "brand": info["name"],

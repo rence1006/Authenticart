@@ -8,13 +8,14 @@ AuthentiCart is a cybersecurity portfolio project that helps shoppers triage an 
 
 ## System overview
 
-The browser client and FastAPI service are deployed together on Vercel. The frontend sends a URL to the same-origin `/check` endpoint. The API runs three independent checks concurrently, then combines their results with brand-domain verification:
+The browser client and FastAPI service are deployed together on Vercel. The frontend sends a URL to the same-origin `/check` endpoint. The API runs independent checks concurrently, then combines their results with brand-domain verification. A failed provider is returned as an unknown signal instead of failing the whole report:
 
 ```text
 Store URL
    │
    ├── Domain age / RDAP       app/whois_check.py
    ├── TLS certificate         app/ssl_check.py
+   ├── Certificate Transparency app/ct_check.py
    ├── Storefront signals      app/scraper.py
    └── Brand-domain identity   app/trusted_domains.py
              │
@@ -31,8 +32,11 @@ Store URL
 |---|---|
 | Domain age | Registration data from RDAP, when available |
 | TLS certificate | Whether HTTPS is valid and who issued the certificate |
-| Storefront content | Contact details, address, phone number, policies, and pressure-selling language |
+| Certificate Transparency | Age of the oldest publicly logged certificate, when crt.sh responds |
+| Storefront content | Contact details, address, phone number, policies, pressure-selling language, redirects, forms, payment wording, registration mentions, and social links |
 | Trusted brands | Whether the hostname exactly matches a curated official domain or looks like a brand impersonation |
+
+Unknown checks contribute zero points. JavaScript-rendered pages, bot challenges, blocked pages, unavailable RDAP or CT data, and timeouts are labeled as unavailable evidence rather than scored as confirmed red flags.
 
 ## Trusted-brand protection
 
@@ -95,6 +99,7 @@ The current deployment is [authenticart-alpha.vercel.app](https://authenticart-a
 - RDAP can be unavailable or privacy-redacted, so domain age may be unknown.
 - Domain age and TLS are signals, not proof of legitimacy.
 - Plain HTTP scraping can miss content rendered entirely by JavaScript.
+- Certificate Transparency and RDAP are public auxiliary data sources and can time out or omit certificates and registration dates.
 - The system does not score individual marketplace sellers or compare live prices.
 
 ## Possible next steps
@@ -102,4 +107,4 @@ The current deployment is [authenticart-alpha.vercel.app](https://authenticart-a
 - Browser extension that checks the active tab automatically.
 - Result caching to avoid repeating checks for the same domain.
 - A labeled dataset for evaluating and tuning scoring weights.
-- Certificate Transparency lookup as an additional signal.
+- Reputation feeds and a labeled evaluation dataset for tuning signal weights.

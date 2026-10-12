@@ -9,11 +9,28 @@ doesn't match the hostname, is a strong red flag.
 """
 import socket
 import ssl
+import ipaddress
 from datetime import datetime, timezone
 from typing import Optional
 from dateutil import parser as dateparser
 
 FREE_CA_KEYWORDS = ["let's encrypt", "lets encrypt", "zerossl", "cloudflare"]
+
+
+def _validate_public_host(domain: str) -> None:
+    try:
+        addresses = [ipaddress.ip_address(domain)]
+    except ValueError:
+        addresses = [
+            ipaddress.ip_address(info[4][0])
+            for info in socket.getaddrinfo(domain, None)
+        ]
+    if any(
+        address.is_private or address.is_loopback or address.is_link_local
+        or address.is_reserved or address.is_multicast or address.is_unspecified
+        for address in addresses
+    ):
+        raise ValueError("Private, local, and reserved hosts are not allowed.")
 
 
 class SSLResult:
@@ -38,6 +55,7 @@ class SSLResult:
     def to_dict(self):
         return {
             "domain": self.domain,
+            "status": "verified" if self.valid or (self.error or "").startswith("Certificate verification failed") else "unknown",
             "valid": self.valid,
             "issuer": self.issuer,
             "not_before": self.not_before.isoformat() if self.not_before else None,
@@ -51,6 +69,7 @@ def check_ssl_certificate(domain: str, timeout: float = 8.0) -> SSLResult:
     domain = domain.lower().strip()
     ctx = ssl.create_default_context()
     try:
+        _validate_public_host(domain)
         with socket.create_connection((domain, 443), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
                 cert = ssock.getpeercert()

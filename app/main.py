@@ -19,9 +19,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .whois_check import check_domain_age
-from .ssl_check import check_ssl_certificate
-from .scraper import scrape_storefront
+from .whois_check import DomainAgeResult, check_domain_age
+from .ssl_check import SSLResult, check_ssl_certificate
+from .scraper import ScrapeResult, scrape_storefront
+from .ct_check import CTResult, check_certificate_transparency
 from .scoring import compute_trust_score
 from .trusted_domains import classify_domain
 
@@ -45,6 +46,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:8002 http://localhost:8002"
+    )
+    return response
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = PROJECT_ROOT / "public"
@@ -100,27 +114,46 @@ async def check_store(payload: CheckRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Run all three checks concurrently — they're independent I/O calls.
-    domain_age_task = check_domain_age(domain)
-    scrape_task = scrape_storefront(payload.url)
+    # Run all independent checks concurrently so one slow provider does not
+    # block the others.
+    domain_age_task = asyncio.wait_for(check_domain_age(domain), timeout=12.0)
+    scrape_task = asyncio.wait_for(scrape_storefront(payload.url), timeout=12.0)
+    ct_task = asyncio.wait_for(check_certificate_transparency(domain), timeout=7.0)
     # ssl check is sync/blocking (uses the socket module), so run it in a thread
     loop = asyncio.get_running_loop()
-    ssl_task = loop.run_in_executor(None, check_ssl_certificate, domain)
-
-    # gather() returns results in the same order the awaitables were passed in
-    domain_age_result, ssl_result, scrape_result = await asyncio.gather(
-        domain_age_task, ssl_task, scrape_task
+    ssl_task = asyncio.wait_for(
+        loop.run_in_executor(None, check_ssl_certificate, domain),
+        timeout=10.0,
     )
 
-    try:
-        final_host = urlparse(scrape_result.final_url).hostname if scrape_result.final_url else domain
-        brand = classify_domain(final_host or domain)
-        brand["checked_host"] = final_host or domain
-        verdict = compute_trust_score(domain_age_result, ssl_result, scrape_result, brand)
-    except Exception as e:
-        # HTTPException responses pass through CORS middleware, so the browser
-        # shows the real message instead of a generic "Failed to fetch".
-        raise HTTPException(status_code=500, detail=f"Scoring failed: {e}")
+    # gather() returns results in the same order the awaitables were passed in
+    domain_age_result, ssl_result, scrape_result, ct_result = await asyncio.gather(
+        domain_age_task, ssl_task, scrape_task, ct_task, return_exceptions=True
+    )
+
+    # A single provider timeout must not turn an otherwise useful check into a
+    # 500. Preserve the failed signal as an explicit unknown result.
+    if isinstance(domain_age_result, Exception):
+        domain_age_result = DomainAgeResult(
+            domain, None, None, None,
+            error=f"Domain age check failed: {domain_age_result}",
+        )
+    if isinstance(ssl_result, Exception):
+        ssl_result = SSLResult(
+            domain, valid=False,
+            error=f"TLS check failed: {ssl_result}",
+        )
+    if isinstance(scrape_result, Exception):
+        scrape_error = scrape_result
+        scrape_result = ScrapeResult(domain)
+        scrape_result.error = f"Storefront check failed: {scrape_error}"
+    if isinstance(ct_result, Exception):
+        ct_result = CTResult(domain, error=f"Certificate Transparency check failed: {ct_result}")
+
+    final_host = urlparse(scrape_result.final_url).hostname if scrape_result.final_url else domain
+    brand = classify_domain(final_host or domain)
+    brand["checked_host"] = final_host or domain
+    verdict = compute_trust_score(domain_age_result, ssl_result, scrape_result, brand, ct_result)
 
     return {
         "url": payload.url,
@@ -132,6 +165,7 @@ async def check_store(payload: CheckRequest):
             "domain_age": domain_age_result.to_dict(),
             "ssl": ssl_result.to_dict(),
             "content_signals": scrape_result.to_dict(),
+            "certificate_transparency": ct_result.to_dict(),
             "brand_check": brand,
         },
     }

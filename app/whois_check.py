@@ -32,6 +32,7 @@ class DomainAgeResult:
     def to_dict(self):
         return {
             "domain": self.domain,
+            "status": "verified" if self.age_days is not None else "unknown",
             "registration_date": self.registration_date.isoformat()
             if self.registration_date
             else None,
@@ -68,6 +69,11 @@ def _extract_registrar(rdap_json: dict) -> Optional[str]:
 
 async def check_domain_age(domain: str) -> DomainAgeResult:
     domain = domain.lower().strip()
+    if domain.endswith(".ph"):
+        return DomainAgeResult(
+            domain, None, None, None,
+            error="The .ph registry does not publish RDAP; domain age is unavailable.",
+        )
     url = RDAP_BOOTSTRAP.format(domain=domain)
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
@@ -75,8 +81,7 @@ async def check_domain_age(domain: str) -> DomainAgeResult:
             if resp.status_code == 404:
                 return DomainAgeResult(
                     domain, None, None, None,
-                    error="No RDAP record found (domain may be unregistered or a "
-                          "privacy-redacted TLD)."
+                    error="No RDAP record was available; registration status could not be determined."
                 )
             resp.raise_for_status()
             data = resp.json()
